@@ -1,124 +1,123 @@
-import pygame
-from pygame.locals import *
-from OpenGL.GL import *
-from OpenGL.GLU import *
+"""Software-rendered 3-D Rubik's Cube for pygame (no OpenGL required)."""
 
-# Matches: 0=White, 1=Yellow, 2=Red, 3=Orange, 4=Green, 5=Blue
-COLORS_GL = [
-    (1, 1, 1),   # 0 White
-    (1, 1, 0),   # 1 Yellow
-    (0.8, 0, 0), # 2 Red
-    (1, 0.5, 0), # 3 Orange
-    (0, 0.8, 0), # 4 Green
-    (0, 0, 0.8)  # 5 Blue
-]
-BLACK = (0, 0, 0)
+from __future__ import annotations
+
+import math
+import pygame
+
+from cube_model import FACES, FACE_BASIS
+
+STICKER_COLORS = (
+    (235, 243, 251),  # white
+    (255, 207, 84),   # yellow
+    (249, 94, 99),    # red
+    (255, 155, 89),   # orange
+    (65, 215, 168),  # green
+    (90, 155, 255),  # blue
+)
+
+
+def add(v, right, horizontal, up, vertical, normal, outward):
+    return tuple(
+        v[i] + horizontal * right[i] + vertical * up[i] + outward * normal[i]
+        for i in range(3)
+    )
+
+
+def adjust(color, scale):
+    return tuple(max(0, min(255, int(c * scale))) for c in color)
+
+
+def in_polygon(point, vertices):
+    """Ray-crossing hit test for a projected quadrilateral."""
+    px, py = point
+    inside = False
+    for i, (x1, y1) in enumerate(vertices):
+        x2, y2 = vertices[(i + 1) % len(vertices)]
+        if (y1 > py) != (y2 > py):
+            crossed = (x2 - x1) * (py - y1) / (y2 - y1) + x1
+            if px < crossed:
+                inside = not inside
+    return inside
+
 
 class CubeVisualizer:
-    def __init__(self, width=800, height=600):
-        pygame.init()
-        pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)
-        self.setup_gl(width, height)
+    def __init__(self):
+        self.polygons = []  # (points, face, row, column); last drawn is foremost
 
-    def setup_gl(self, width, height):
-        glEnable(GL_DEPTH_TEST)
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(45, (width / height), 0.1, 100.0)
-        glMatrixMode(GL_MODELVIEW)
-        glLoadIdentity()
-        glLineWidth(2) # Thicker lines for edges
+    @staticmethod
+    def transform(v, pitch, yaw):
+        yaw_r = math.radians(yaw)
+        pitch_r = math.radians(pitch)
+        x, y, z = v
+        x1 = x * math.cos(yaw_r) + z * math.sin(yaw_r)
+        z1 = -x * math.sin(yaw_r) + z * math.cos(yaw_r)
+        y2 = y * math.cos(pitch_r) - z1 * math.sin(pitch_r)
+        z2 = y * math.sin(pitch_r) + z1 * math.cos(pitch_r)
+        return x1, y2, z2
 
-    def draw_cubie(self, x, y, z, face_colors):
-        """
-        face_colors: [U, D, F, B, L, R] specific colors for this cubie.
-        None if that face is internal.
-        """
-        glPushMatrix()
-        glTranslatef(x, y, z)
-        
-        # Half-size
-        s = 0.5
-        
-        # Geometry definition (Normal, Vertex Quad)
-        surfaces = [
-            # Up (y=1)
-            ((0, 1, 0), [(-s, s, -s), (-s, s, s), (s, s, s), (s, s, -s)], face_colors[0]),
-            # Down (y=-1)
-            ((0, -1, 0), [(-s, -s, -s), (s, -s, -s), (s, -s, s), (-s, -s, s)], face_colors[1]),
-            # Front (z=1)
-            ((0, 0, 1), [(-s, -s, s), (s, -s, s), (s, s, s), (-s, s, s)], face_colors[2]),
-            # Back (z=-1)
-            ((0, 0, -1), [(-s, -s, -s), (-s, s, -s), (s, s, -s), (s, -s, -s)], face_colors[3]),
-            # Left (x=-1)
-            ((-1, 0, 0), [(-s, -s, -s), (-s, -s, s), (-s, s, s), (-s, s, -s)], face_colors[4]),
-            # Right (x=1)
-            ((1, 0, 0), [(s, -s, -s), (s, s, -s), (s, s, s), (s, -s, s)], face_colors[5]),
-        ]
+    def render(self, surface, cube, center, pitch, yaw, zoom, hover=None, paint_mode=False):
+        cx, cy = center
+        scale = 115 * zoom
+        self.polygons = []
 
-        for normal, vertices, color_idx in surfaces:
-            # 1. Draw Color Face
-            if color_idx is not None:
-                glColor3fv(COLORS_GL[color_idx])
-            else:
-                glColor3fv((0.1, 0.1, 0.1)) # Internal dark grey
+        def project(v):
+            x, y, z = self.transform(v, pitch, yaw)
+            perspective = 6.8 / (6.8 - z * 0.31)
+            return (round(cx + x * scale * perspective),
+                    round(cy - y * scale * perspective))
 
-            glBegin(GL_QUADS)
-            glNormal3fv(normal)
-            for v in vertices: glVertex3fv(v)
-            glEnd()
+        faces = []
+        for face in FACES:
+            normal, right, up = FACE_BASIS[face]
+            nz = self.transform(normal, pitch, yaw)[2]
+            if nz > 0.025:
+                faces.append((nz, face, normal, right, up))
+        faces.sort(key=lambda item: item[0])
 
-            # 2. Draw Black Edge (Outline)
-            glColor3fv(BLACK)
-            glBegin(GL_LINE_LOOP)
-            for v in vertices: glVertex3fv(v)
-            glEnd()
+        for nz, face, normal, right, up in faces:
+            origin = (0.0, 0.0, 0.0)
+            board = [
+                project(add(origin, right, hor, up, ver, normal, 1.49))
+                for hor, ver in ((-1.49, -1.49), (1.49, -1.49), (1.49, 1.49), (-1.49, 1.49))
+            ]
+            pygame.draw.polygon(surface, (16, 25, 40), board)
+            pygame.draw.polygon(surface, (51, 68, 88), board, 3)
+            face_shade = 0.72 + 0.28 * min(1, nz)
 
-        glPopMatrix()
+            for row in range(3):
+                for column in range(3):
+                    # Sticker positions derive from the exact SAME basis as the
+                    # cube's move permutations and Kociemba serialization.
+                    right_pos, up_pos = column - 1, 1 - row
+                    points = [
+                        project(add(origin, right, right_pos + hor,
+                                    up, up_pos + ver, normal, 1.51))
+                        for hor, ver in ((-0.454, -0.454), (0.454, -0.454),
+                                         (0.454, 0.454), (-0.454, 0.454))
+                    ]
+                    idx = cube.state[face][row][column]
+                    color = STICKER_COLORS[idx]
+                    pygame.draw.polygon(surface, (8, 17, 28), points)
+                    pygame.draw.polygon(surface, adjust(color, face_shade), points)
+                    pygame.draw.lines(surface, adjust(color, min(1.13, face_shade + 0.24)),
+                                      False, points[2:4], 2)
+                    pygame.draw.polygon(surface, (30, 40, 56), points, 2)
+                    self.polygons.append((points, face, row, column))
 
-    def render(self, cube, rot_x, rot_y, zoom):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glLoadIdentity()
-        
-        # Apply Camera
-        glTranslatef(0.0, 0.0, zoom)
-        glRotatef(rot_x, 1, 0, 0)
-        glRotatef(rot_y, 0, 1, 0)
+        if paint_mode and hover is not None:
+            sticker = self.hit_test(hover)
+            if sticker:
+                face, row, column = sticker
+                if (row, column) != (1, 1):
+                    points = next((poly for poly, f, r, c in reversed(self.polygons)
+                                   if (f, r, c) == sticker), None)
+                    if points:
+                        pygame.draw.polygon(surface, (240, 250, 255), points, 4)
+        return len(faces)
 
-        # Iterate 3x3x3 grid (-1, 0, 1)
-        # Map logical state to 3D position
-        # Cube indices: 0,1,2. 3D Coords: -1, 0, 1
-        # Mapping: 0 -> -1, 1 -> 0, 2 -> 1
-        
-        for x in range(3):
-            for y in range(3):
-                for z in range(3):
-                    # Physical coordinates
-                    px, py, pz = (x-1)*1.05, (1-y)*1.05, (z-1)*1.05 
-                    # Note: Y is inverted in GL usually (Up is positive), 
-                    # but array index 0 is top. So y=0 -> py=1.
-
-                    # Determine colors for this cubie
-                    # Indices: U=0, D=1, F=2, B=3, L=4, R=5
-                    cols = [None]*6
-                    
-                    # Logic to pick sticker color from cube.state
-                    # y=0 is UP face. y=2 is DOWN face.
-                    if y == 0: cols[0] = cube.state['U'][z][x] # U
-                    if y == 2: cols[1] = cube.state['D'][z][x] # D
-                    
-                    # z=2 is FRONT face (index 2?). Wait, prompt mapping:
-                    # Standard: Front is usually z+. 
-                    # Let's assume Array structure: [row][col]
-                    if z == 2: cols[2] = cube.state['F'][y][x] # F
-                    if z == 0: cols[3] = cube.state['B'][y][2-x] # B (inverted x?)
-                    
-                    if x == 0: cols[4] = cube.state['L'][y][2-z] # L
-                    if x == 2: cols[5] = cube.state['R'][y][z] # R
-                    
-                    # (Note: Exact [y][x] mapping depends on your mental model of the array orientation
-                    # vs 3D space. This is a best-effort mapping for visual consistency).
-
-                    self.draw_cubie(px, py, pz, cols)
-
-        pygame.display.flip()
+    def hit_test(self, position):
+        for points, face, row, col in reversed(self.polygons):
+            if in_polygon(position, points):
+                return face, row, col
+        return None
