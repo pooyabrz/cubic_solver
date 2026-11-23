@@ -26,7 +26,7 @@ On Windows, you can instead double-click `start_windows.bat` to prepare a virtua
 | Invalid input mostly exposed in the terminal | **In-app validation and explanatory error messages** |
 | Required OpenGL and NumPy | **Only Pygame for graphics and Kociemba for solutions** |
 
-## Guide / راهنمای استفاده
+## Guide
 
 1. **Turn the cube**: Click the `U R F D L B` buttons below the 3D view. The second row turns in the opposite direction. The single letters are standard Rubik's notation (not colors).
 2. **Rotate / zoom the view**: Left- or right-drag the cube area to orbit. Use the mouse wheel or `+` / `-` buttons to zoom. `Reset view` restores the default camera.
@@ -35,7 +35,6 @@ On Windows, you can instead double-click `start_windows.bat` to prepare a virtua
 5. **Import / export / save**: Click `Import / Export` in the top bar to copy, paste or type a standard 54-character string. A session can also be saved to the local user's home folder and later restored.
 6. **Help**: `? How to use` opens the built-in onboarding guide at any time.
 
-**نکات فارسی:** دیگر نیازی نیست برای رنگ‌آمیزی ۵۴ خانه پشت سر هم کلید بزنید. ابتدا یکی از شش رنگ پایین پنل را انتخاب کنید، سپس روی خانه مورد نظر کلیک کنید. برای حل مکعب «Find solution» را بزنید و با «Next» حل را مرحله‌به‌مرحله ببینید یا «Play» را بزنید. دکمه‌های «Undo» و «Redo» تغییرات دستی را برمی‌گردانند. با «? How to use» راهنمای داخلی باز می‌شود.
 
 ### Keyboard shortcuts (optional)
 
