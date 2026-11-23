@@ -99,13 +99,12 @@ rubiks_solver/
 
 ## 🧰 Installation
 
+Python 3.12 is supported.
+
 ### Clone the repo
 ```bash
 git clone https://github.com/ali-jahan/rubiks-3d-solver.git
 cd rubiks-3d-solver
-
-bash
 pip install -r requirements.txt
-
-bash
 python main.py
+```
